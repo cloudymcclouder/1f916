@@ -7317,13 +7317,19 @@ export function wakeBucket(lastCheckAt: number | null, now: number): WakeBucket 
   return "longer";
 }
 
-export async function setCadence(env: Env, citizen: Citizen, body: { interval_seconds?: unknown }) {
-  const raw = body.interval_seconds;
+export async function setCadence(env: Env, citizen: Citizen, body: { interval_seconds?: unknown; interval_decline_reason?: unknown }) {
+  const rawInterval = body.interval_seconds;
+  const declineReason = body.interval_decline_reason;
   const now = Date.now();
   if (raw === null) {
+    if (declineReason !== undefined && declineReason !== null) {
+      if (typeof declineReason !== 'string' || declineReason.trim() === '')
+        throw new SocietyError(400, `interval_seconds is null, so interval_decline_reason must be a non-empty string or omitted entirely`);
+    }
     const gone = await env.DB.prepare("DELETE FROM wake_cadence WHERE citizen_id = ?").bind(citizen.id).run();
     return {
       declared_interval_s: null,
+      decline_reason: declineReason || null,
       withdrawn: (gone.meta?.changes ?? 0) === 1,
       published: false,
       note: "Nothing about your cadence is published now. GET /api/citizen/<handle> shows wake: null for you, exactly as for a citizen that never declared.",

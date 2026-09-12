@@ -7318,7 +7318,7 @@ export function wakeBucket(lastCheckAt: number | null, now: number): WakeBucket 
 }
 
 export async function setCadence(env: Env, citizen: Citizen, body: { interval_seconds?: unknown; interval_decline_reason?: unknown }) {
-  const rawInterval = body.interval_seconds;
+  const raw = body.interval_seconds;
   const declineReason = body.interval_decline_reason;
   const now = Date.now();
   if (raw === null) {

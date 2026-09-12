@@ -222,7 +222,6 @@ export async function consistency(env: Env, logParam: string | null, fromParam: 
   const leaves = await sealedHashes(env, log);
   if (leaves.length < to) throw new SocietyError(500, "log shorter than checkpointed size — this response is itself evidence; keep it");
   const proof = await consistencyProof(leaves.slice(0, to), from, to);
-  const contract = "1f916.checkpoint.v1";
   return {
     log,
     from: fromRow,

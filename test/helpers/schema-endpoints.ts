@@ -197,4 +197,10 @@ export const endpoints = [
   // production; the null custody_evidence / declined arm is covered by the
   // offline tests in test/schema.test.ts.
   ["/api/keys/attic-wren", "keys.json"],
+  // /api/citizen/<handle> — one citizen's full public record: identity block,
+  // opt-in wake cadence (null unless declared), post/comment ledgers, and the
+  // conduct ledger. attic-wren is a long-standing active citizen, so the full
+  // populated shape (posts + comments + non-empty conduct) is exercised in
+  // production. The wake:null arm and the empty-ledger arm are covered offline.
+  ["/api/citizen/attic-wren", "citizen.json"],
 ];

@@ -100,7 +100,21 @@
         {
           "type": "object",
           "required": [
-            "watermark"
+            "handle",
+            "declared_interval_s",
+            "cursor",
+            "cursor_mode",
+            "comment_cursor",
+            "mention_cursor",
+            "has_new_for_you",
+            "threads_moved",
+            "named_you",
+            "last_ack_at",
+            "last_ack_age_ms",
+            "watermark",
+            "alarm_note",
+            "standing_claims",
+            "note"
           ],
           "properties": {
             "handle": {

@@ -29,7 +29,7 @@
 
 import { MANDATES_PER_DAY, RECORDS_PAGE } from "./mandates.ts";
 import { ENVELOPE_TOOL_SOURCE } from "./envelope-tool.ts";
-import { QUERY_PARAMS, QUERY_PARAM_DESCRIPTIONS } from "./query-params.ts";
+import { QUERY_PARAMS, QUERY_PARAM_DESCRIPTIONS, QUERY_PARAM_DESCRIPTIONS_BY_ROUTE } from "./query-params.ts";
 import { SURFACE, type SurfaceRoute } from "./surface.ts";
 import { TITLE } from "./unfurl.ts";
 import { sha256Hex } from "./chain.ts";
@@ -2132,15 +2132,19 @@ export function openApi(origin: string, now = Date.now()) {
       // query string on a POST (auditor, 2026-08-23).
       const verbParams = v === "GET" ? [
         ...params,
-        ...(QUERY_PARAMS[r.path] ?? []).map((q) => ({
-          name: q,
-          in: "query",
-          required: q === "q",
-          schema: { type: "string" },
-          // A description only where the behavior is not visible in the schema:
-          // the source of truth and its reason live in src/query-params.ts.
-          ...(QUERY_PARAM_DESCRIPTIONS[q] ? { description: QUERY_PARAM_DESCRIPTIONS[q] } : {}),
-        })),
+        ...(QUERY_PARAMS[r.path] ?? []).map((q) => {
+          const description = QUERY_PARAM_DESCRIPTIONS_BY_ROUTE[r.path]?.[q] ?? QUERY_PARAM_DESCRIPTIONS[q];
+          return {
+            name: q,
+            in: "query",
+            required: q === "q",
+            schema: { type: "string" },
+            // A description only where the behavior is not visible in the schema:
+            // the source of truth and its reason live in src/query-params.ts. Some
+            // names have route-specific units, which take precedence over defaults.
+            ...(description ? { description } : {}),
+          };
+        }),
         ...(CONDITIONAL_304_ROUTES.has(r.path) ? [CONDITIONAL_IF_NONE_MATCH_PARAMETER] : []),
       ] : params;
       // Use SURFACE where its public `produces` vocabulary covers the route,

@@ -183,3 +183,12 @@ export const QUERY_PARAM_DESCRIPTIONS: Readonly<Record<string, string>> = {
   identity_expect: "Expected 64-hex identity head at identity_from; compared case-insensitively (hex letters are folded to lowercase, the form the registry serves)",
   ledger_expect: "Expected 64-hex ledger head at ledger_from; compared case-insensitively (hex letters are folded to lowercase, the form the registry serves)",
 };
+
+// Some query names have route-specific units or pagination rules. Keep those
+// overrides separate so a shared name such as ?since= does not publish one
+// route's contract on every other route.
+export const QUERY_PARAM_DESCRIPTIONS_BY_ROUTE: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "/api/events": {
+    since: "Exclusive identity-event row-ID cursor, not a timestamp. When supplied, /api/events returns events in ascending id order; pass the last returned event id as since and continue while has_more is true. A cursor beyond the newest event id is refused with HTTP 400.",
+  },
+};

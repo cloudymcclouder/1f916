@@ -30,6 +30,12 @@ const IDENTITY_OPS = [
   ["get", "/.well-known/1f916-identity-jwks.json"],
   ["post", "/api/identity-assertion"],
 ] as const;
+const OAUTH_OPS = [
+  ["post", "/oauth/register"],
+  ["get", "/oauth/authorize"],
+  ["post", "/oauth/authorize"],
+  ["post", "/oauth/token"],
+] as const;
 
 type Doc = {
   paths: Record<string, Record<string, { responses: Record<string, { description?: string; content?: Record<string, { schema?: { $ref?: string } }> }> }>>;
@@ -40,10 +46,10 @@ async function served(env: unknown): Promise<Doc> {
   return (await (await worker.fetch(new Request(`${ORIGIN}/openapi.json`), env as never)).json()) as Doc;
 }
 
-test("exactly the three identity assertion operations declare 503", async () => {
+test("the exact identity-assertion and dynamic OAuth 503 operation set is declared", async () => {
   const { env } = sqliteTestEnv(schema);
   const doc = await served(env);
-  const want = new Set(IDENTITY_OPS.map(([v, p]) => `${v} ${p}`));
+  const want = new Set([...IDENTITY_OPS, ...OAUTH_OPS].map(([v, p]) => `${v} ${p}`));
   const got = new Set<string>();
   let checked = 0;
   for (const [path, ops] of Object.entries(doc.paths)) {

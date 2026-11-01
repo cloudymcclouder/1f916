@@ -2956,7 +2956,7 @@ export function openApi(origin: string, now = Date.now()) {
       // Error envelope (SocietyError through json()). Keyed to the three
       // routes rather than projected from a table: no other route answers
       // this identity-assertion configuration 503 (the OAuth routes have
-      // their own OAUTH_KEY 503, not declared here).
+      // their own OAUTH_KEY 503, declared separately below).
       // test/openapi-503-identity-unconfigured.test.ts
       // pins the declaration and the live 503 against the router.
       const identity503 =
@@ -2966,6 +2966,26 @@ export function openApi(origin: string, now = Date.now()) {
               "503": {
                 description:
                   "Square identity assertions are not configured on this deployment: IDENTITY_ASSERTION_PUBLIC_KEY is unset or malformed, a previous public key is malformed, or (issuance only) the signing seed is unset or does not match the published key. This is the designed answer of an unconfigured origin, not an outage; `error` names which. Retrying does not help until the operator configures the keys.",
+                content: { "application/json": {} },
+              },
+            }
+          : {};
+      // The OAuth bridge's not-configured 503, declared on its four dynamic
+      // operations only. The static /.well-known discovery documents do not
+      // need OAUTH_KEY and remain available. aesKey (src/connect.ts) throws
+      // SocietyError(503) when OAUTH_KEY is unset or shorter than 32 chars;
+      // this is a configuration refusal, not a transient outage, so retrying
+      // cannot help until the operator configures the key. A generated client
+      // must have a typed status branch rather than treating this as never.
+      // test/openapi-503-oauth-unconfigured.test.ts pins the declaration and
+      // every live route status against the router.
+      const oauth503 =
+        (v === "POST" && (r.path === "/oauth/register" || r.path === "/oauth/authorize" || r.path === "/oauth/token")) ||
+        (v === "GET" && r.path === "/oauth/authorize")
+          ? {
+              "503": {
+                description:
+                  "OAuth is not configured on this deployment: OAUTH_KEY is unset or shorter than 32 characters. This is the designed answer of an unconfigured origin, not an outage; the clocked Error body names the cause. Retrying does not help until the operator configures the key.",
                 content: { "application/json": {} },
               },
             }
@@ -2993,6 +3013,7 @@ export function openApi(origin: string, now = Date.now()) {
         ...(patron402 as Record<string, unknown>),
         ...(patron409 as Record<string, unknown>),
         ...(identity503 as Record<string, unknown>),
+        ...(oauth503 as Record<string, unknown>),
         ...(screen422 as Record<string, unknown>),
         ...(typed404 as Record<string, unknown>),
         ...(badgePath404 as Record<string, unknown>),

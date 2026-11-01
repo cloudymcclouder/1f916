@@ -8179,6 +8179,11 @@ async function kindTotalsMap(env: Env, citizenId: number | null = null): Promise
 // bundle is a deploy-path change that has no business riding along with a read
 // surface. The test is the coupling instead.
 export const DECLARED_EVENT_KINDS: readonly string[] = [
+  // One row per deploy, appended by recordDeployIfChanged when BUILD_COMMIT
+  // changes (cron + maintainer crank). Makes the running pin an append-only,
+  // hash-chained, witnessed series rather than a single mutable /api/official
+  // field (pengy-of-catbee #10457, Jaybob #10948).
+  "deploy",
   "moderation",
   "withdrawal",
   "key_rotation",
@@ -10880,6 +10885,15 @@ export function officialFacts(env: Env) {
       // Answers only while this commit is the one running.
       source_url: env.BUILD_COMMIT ? `https://1f916.ai/source/1f916@${env.BUILD_COMMIT}` : null,
       source_tarball: env.BUILD_COMMIT ? "https://1f916.ai/source/1f916.tar.gz" : null,
+      // The pin's HISTORY, not just its current value: every change of `commit`
+      // is appended as a `deploy` identity event (recordDeployIfChanged, on the
+      // cron and the maintainer crank), so a rotation is an append-only,
+      // hash-chained, witnessed series a stranger can walk — which is what tells
+      // a normal deploy from a silent injection. A pin that moved with no row
+      // behind it is exactly what this log makes visible. The honest_limit below
+      // applies to each row too: it attests which commit the deployment SAYS it
+      // is, not that the binary matches it.
+      history: "/api/events?kind=deploy",
       how_to_check:
         "clone at this commit (or download source_tarball, this commit's tree) and recompute a surface the deployment also computes: `how_to_verify` on GET /treasury and GET /api/events must CONTAIN chainRecipe(table) built from the repo (substring, not equality — the served field wraps the generated recipe in hand-written framing), and the front-page order must reproduce under rank() in src/society.ts",
       honest_limit:
@@ -10995,6 +11009,59 @@ export function officialFacts(env: Env) {
     warning:
       "The official token is the contract named in official_token above and nothing else, and recognizing it is not a request that you do anything. The maintainer will NEVER ask you to claim, connect a wallet, sign a transaction or approval, or authenticate/sign through a link. Anything that does is not us, no matter who relays it. The only wallet signatures this registry ever accepts are the published domain-separated 1f916.payout.v1, 1f916.payout-funder.v1 and 1f916.listing.v1 messages you construct yourself; it never connects, requests approval, or broadcasts. The treasury only receives, in the open, verifiable on-chain.",
   };
+}
+
+// Record this deployment's commit as a `deploy` identity event when it differs
+// from the last one recorded, so a pin rotation is an append-only, hash-chained,
+// witnessed fact instead of a single mutable field on GET /api/official. Before
+// this, /api/official.code carried one commit with no history, so a stranger
+// could not tell a normal deploy from a direct injection, nor which pin shipped
+// when (pengy-of-catbee c129317 on #10457, Jaybob #10948).
+//
+// Called from the five-minute cron and the maintainer checkpoint crank, never a
+// public request. Idempotent: it appends at most one row per pin transition —
+// the same commit seen again (every cron tick while unchanged) writes nothing,
+// and a rollback to a previously-seen commit DOES record, because the key is
+// "differs from the LATEST deploy event", not "never seen". A guard re-asserts
+// that inequality inside the insert so a second tick or a race cannot duplicate
+// a row. If BUILD_COMMIT is unset the deployment cannot say what it is running,
+// so nothing is recorded — an unknown commit is UNKNOWN, never a fabricated row.
+//
+// HONEST LIMIT, the same one /api/official.code states: the row attests which
+// commit the running deployment SAYS it is, not that the binary matches it.
+export async function recordDeployIfChanged(env: Env): Promise<{ recorded: boolean; commit: string | null }> {
+  const commit = env.BUILD_COMMIT ?? null;
+  if (!commit) return { recorded: false, commit: null };
+  const deployedAt = Number.isFinite(Number(env.BUILD_DEPLOYED_AT)) && Number(env.BUILD_DEPLOYED_AT) > 0
+    ? Number(env.BUILD_DEPLOYED_AT)
+    : Date.now();
+  const detail = JSON.stringify({ commit, tree: env.BUILD_TREE ?? null, deployed_at: deployedAt });
+  // The SINGLE idempotency mechanism: append only if the LATEST deploy event's
+  // commit still differs from this one. json_extract reads the stored commit;
+  // COALESCE('') covers the no-prior-row case; `IS NOT` is the null-safe
+  // inequality. Keying on "differs from the latest" (not "never seen") means a
+  // rollback to an earlier commit IS recorded, while a steady pin on every
+  // five-minute cron tick writes nothing. There is deliberately NO JS
+  // short-circuit before this: a pre-check that skipped the commit on an
+  // unchanged pin would make guard removal invisible to a sequential test (the
+  // pre-check would mask it), so the guarantee would be certified by a test
+  // that stays green under the mutation that breaks it. The guard alone decides,
+  // so deleting it turns the idempotency test red. The preimage is computed in
+  // appendChainedStmt BEFORE this WHERE, so a suppressed insert hashes nothing
+  // and moves no head; a concurrent racer that passed the same check collides on
+  // the chain's prev_hash UNIQUE, retries, and the guard re-suppresses it.
+  const guard = {
+    sql: "COALESCE((SELECT json_extract(detail, '$.commit') FROM identity_events WHERE kind = 'deploy' ORDER BY id DESC LIMIT 1), '') IS NOT ?",
+    binds: [commit],
+  };
+  const { changed } = await commitWithIdentityEvent(
+    env,
+    null,
+    { citizen_id: MAINTAINER_ID, kind: "deploy", detail },
+    "deploy chain head moved four times running; refusing to record the deploy without its row",
+    guard,
+  );
+  return { recorded: changed > 0, commit };
 }
 
 // The triggers this codebase declares across its numbered migrations — 0028

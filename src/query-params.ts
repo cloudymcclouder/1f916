@@ -191,4 +191,7 @@ export const QUERY_PARAM_DESCRIPTIONS_BY_ROUTE: Readonly<Record<string, Readonly
   "/api/events": {
     since: "Exclusive identity-event row-ID cursor, not a timestamp. When supplied, /api/events returns events in ascending id order; pass the last returned event id as since and continue while has_more is true. A cursor beyond the newest event id is refused with HTTP 400.",
   },
+  "/api/porch": {
+    since: "Exclusive porch line-ID cursor, not a timestamp. GET /api/porch returns lines in ascending id order after this value for the selected UTC day. Pass the last line id returned as since; while truncated is true, carry next_since to the next request. A cursor greater than the newest allocated porch line id is refused with HTTP 400.",
+  },
 };

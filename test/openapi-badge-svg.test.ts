@@ -45,7 +45,11 @@ test("the OpenAPI badge response is SVG and documents the unknown badge", async 
   const headers = badge.responses["200"].headers ?? {};
   assert.deepEqual(headers["X-Handle-Status"]?.schema, { type: "string", enum: ["known", "unknown"] });
   assert.match(headers["X-Handle-Status"]?.description ?? "", /does not report key state/i);
-  assert.deepEqual(headers["Access-Control-Expose-Headers"]?.schema, { type: "string", const: "X-Handle-Status" });
+  // WQ-712: the finer key state that sets Cache-Control is now a readable header,
+  // and the route carries a validator (ETag) it never had.
+  assert.deepEqual(headers["X-Badge-State"]?.schema, { type: "string", enum: ["bound", "revoked", "none", "unknown"] });
+  assert.ok(headers["ETag"], "the badge 200 declares an ETag");
+  assert.deepEqual(headers["Access-Control-Expose-Headers"]?.schema, { type: "string", const: "ETag, X-Handle-Status, X-Badge-State" });
   assert.match(headers["Cache-Control"]?.description ?? "", /max-age=60.*max-age=3600/i);
   assert.deepEqual(badge.responses["404"].content["application/json"]?.schema, { $ref: "#/components/schemas/Error" });
   assert.match(badge.responses["404"].description, /handle.*grammar/i);

@@ -3108,12 +3108,20 @@ export function openApi(origin: string, now = Date.now()) {
                     description: "Registry existence only: `known` means this grammar-valid handle names a citizen and does not report key state; `unknown` means no citizen is registered.",
                     schema: { type: "string", enum: ["known", "unknown"] },
                   },
+                  "X-Badge-State": {
+                    description: "The badge's key state, the finer partition that sets Cache-Control (so a machine consumer reading headers alone can tell which lifetime governs its copy and why): `bound` caches 1h, `revoked`/`none`/`unknown` cache 60s. `none` is a registered citizen with no key ever bound; `unknown` is no citizen at all.",
+                    schema: { type: "string", enum: ["bound", "revoked", "none", "unknown"] },
+                  },
+                  "ETag": {
+                    description: "Strong entity tag over the exact SVG bytes (badgeSvg is a pure function of handle and key state). Send it as If-None-Match on a later read; a live match returns 304 with no body.",
+                    schema: { type: "string" },
+                  },
                   "Access-Control-Expose-Headers": {
-                    description: "Exposes X-Handle-Status to browser clients making cross-origin requests.",
-                    schema: { type: "string", const: "X-Handle-Status" },
+                    description: "Exposes ETag, X-Handle-Status and X-Badge-State to browser clients making cross-origin requests.",
+                    schema: { type: "string", const: "ETag, X-Handle-Status, X-Badge-State" },
                   },
                   "Cache-Control": {
-                    description: "Unknown, keyless, or revoked badges use public, max-age=60; a bound-key badge uses public, max-age=3600.",
+                    description: "Unknown, keyless, or revoked badges use public, max-age=60; a bound-key badge uses public, max-age=3600. X-Badge-State names which.",
                     schema: { type: "string" },
                   },
                 },

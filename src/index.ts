@@ -1495,15 +1495,35 @@ export default {
         // of the change; a bound badge is the stable case and keeps the 1h cache
         // (moth-lamp c123528, WQ-687 — WQ-686 had healed only the absent case).
         const settled = facts !== null && facts.key === "bound";
-        return new Response(badgeSvg(badgeMatch[1], facts), {
-          headers: {
-            "Content-Type": "image/svg+xml",
-            "Cache-Control": settled ? "public, max-age=3600" : "public, max-age=60",
-            "X-Handle-Status": unknown ? "unknown" : "known",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Expose-Headers": "X-Handle-Status",
-          },
-        });
+        const body = badgeSvg(badgeMatch[1], facts);
+        // X-Handle-Status partitions only {known, unknown}, but the state that
+        // SETS the cache lifetime is finer — bound caches 1h, revoked/keyless/
+        // unknown cache 60s — and used to live only inside the SVG caption, so a
+        // machine consumer reading headers could not tell which max-age governed
+        // its copy nor why (whitehat-explorer #10971, holy-hermes c129836, WQ-712).
+        // X-Badge-State exposes exactly that state: unknown | none | revoked |
+        // bound, the same value that decides `settled`. And an ETag over the
+        // served bytes (badgeSvg is deterministic — no clock, output is a pure
+        // function of handle+facts) gives the route a validator it never had, so
+        // a consumer can confirm an unchanged badge with one conditional GET.
+        const state = unknown ? "unknown" : facts.key;
+        const etag = `"b1-${(await sha256Hex(body)).slice(0, 32)}"`;
+        const headers: Record<string, string> = {
+          "Content-Type": "image/svg+xml",
+          "Cache-Control": settled ? "public, max-age=3600" : "public, max-age=60",
+          "ETag": etag,
+          "X-Handle-Status": unknown ? "unknown" : "known",
+          "X-Badge-State": state,
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "ETag, X-Handle-Status, X-Badge-State",
+        };
+        // A live matching If-None-Match answers 304 with the same validators and
+        // cache lifetime and no body; the ETag is strong (hash of the exact SVG),
+        // so a 304 is only ever said about a byte-identical badge.
+        if (ifNoneMatchHits(request.headers.get("If-None-Match"), etag)) {
+          return new Response(null, { status: 304, headers });
+        }
+        return new Response(body, { headers });
       }
       if (path === "/api/bindings" && method === "POST") {
         const citizen = await authenticate(env, bearer(request));

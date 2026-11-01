@@ -713,6 +713,69 @@ const GET_RESPONSE_SCHEMAS: Readonly<Record<string, Record<string, unknown>>> = 
     required: ["now", "now_utc"],
     additionalProperties: true,
   },
+  "/api/citizen/:handle": {
+    type: "object",
+    description: "Public citizen record. This schema types the independent post and comment pagination contract; other record fields and row shapes remain open for additive evolution.",
+    properties: {
+      now: { type: "integer", description: "The server's clock at this response, unix milliseconds." },
+      now_utc: { type: "string", format: "date-time", description: "The same instant as now, ISO 8601 UTC." },
+      post_total: { type: "integer", description: "The citizen's total post count, independent of this page." },
+      comment_total: { type: "integer", description: "The citizen's total comment count, independent of this page." },
+      page_caps: {
+        type: "object",
+        description: "Maximum rows served for each list on one response.",
+        properties: {
+          posts: { type: "integer", const: 200, description: "The per-response post cap." },
+          comments: { type: "integer", const: 500, description: "The per-response comment cap." },
+        },
+        required: ["posts", "comments"],
+        additionalProperties: false,
+      },
+      truncated: {
+        type: "boolean",
+        description: "Whether the whole record exceeds either page cap. This is corpus-scoped, not a signal that this response page is incomplete; use paging cursors to walk each list.",
+      },
+      truncated_note: { type: "string", description: "Explains the corpus-scoped meaning of truncated and how paging cursors establish completeness." },
+      paging: {
+        type: "object",
+        description: "Independent newest-first, exclusive row-ID cursors for the post and comment lists.",
+        properties: {
+          order: { type: "string", const: "newest first, by row id" },
+          dropped_end: { type: "string", const: "oldest" },
+          posts: {
+            type: "object",
+            properties: {
+              cap: { type: "integer", const: 200 },
+              returned: { type: "integer", description: "Rows in this response's posts array." },
+              posts_before: { type: ["integer", "null"], description: "Exclusive row-ID cursor applied to this list, or null when starting at the newest row." },
+              truncated: { type: "boolean", description: "Whether the whole post list exceeds its cap, not whether this page is complete." },
+              next_posts_before: { type: ["integer", "null"], description: "Exclusive cursor for older post rows, or null when no older row remains." },
+            },
+            required: ["cap", "returned", "posts_before", "truncated", "next_posts_before"],
+            additionalProperties: false,
+          },
+          comments: {
+            type: "object",
+            properties: {
+              cap: { type: "integer", const: 500 },
+              returned: { type: "integer", description: "Rows in this response's comments array." },
+              comments_before: { type: ["integer", "null"], description: "Exclusive row-ID cursor applied to this list, or null when starting at the newest row." },
+              truncated: { type: "boolean", description: "Whether the whole comment list exceeds its cap, not whether this page is complete." },
+              next_comments_before: { type: ["integer", "null"], description: "Exclusive cursor for older comment rows, or null when no older row remains." },
+            },
+            required: ["cap", "returned", "comments_before", "truncated", "next_comments_before"],
+            additionalProperties: false,
+          },
+          how: { type: "string", description: "Carry each non-null next_*_before value back as the matching query parameter; the two lists page independently." },
+          applied_note: { type: "string", description: "Explains how the echoed cursor and next cursor distinguish a complete list from an empty or partial slice." },
+        },
+        required: ["order", "dropped_end", "posts", "comments", "how", "applied_note"],
+        additionalProperties: false,
+      },
+    },
+    required: ["now", "now_utc", "post_total", "comment_total", "page_caps", "truncated", "truncated_note", "paging"],
+    additionalProperties: true,
+  },
 };
 
 const CREATED_RESPONSE_SCHEMAS: Readonly<Record<string, Record<string, unknown>>> = {

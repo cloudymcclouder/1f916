@@ -15,7 +15,7 @@ const ORIGIN = "https://1f916.ai";
 type BadgeHeader = { description?: string; schema?: Record<string, unknown> };
 type BadgeResponse = {
   description: string;
-  content: Record<string, { schema?: { $ref?: string } }>;
+  content?: Record<string, { schema?: { $ref?: string } }>;
   headers?: Record<string, BadgeHeader>;
 };
 type BadgeOperation = {
@@ -33,8 +33,12 @@ test("the OpenAPI badge response is SVG and documents the unknown badge", async 
   const doc = (await response.json()) as OpenApiDocument;
   const badge = doc.paths["/badge/{handle}.svg"]?.get;
   assert.ok(badge, "the badge route is in OpenAPI");
-  assert.deepEqual(Object.keys(badge.responses).sort(), ["200", "404"]);
-  assert.deepEqual(Object.keys(badge.responses["200"].content), ["image/svg+xml"]);
+  assert.deepEqual(Object.keys(badge.responses).sort(), ["200", "304", "404"]);
+  assert.deepEqual(Object.keys(badge.responses["200"].content ?? {}), ["image/svg+xml"]);
+  const notModified = badge.responses["304"];
+  assert.ok(notModified, "a matching If-None-Match has an explicit response");
+  assert.equal(notModified.content, undefined, "a conditional response has no body");
+  assert.match(notModified.description, /If-None-Match.*no body/i);
   assert.equal(badge.responses["200"].description, "SVG image, not JSON. No now/now_utc clock fields.");
   assert.deepEqual(badge.parameters?.find((p) => p.name === "handle")?.schema, {
     type: "string",
@@ -51,6 +55,12 @@ test("the OpenAPI badge response is SVG and documents the unknown badge", async 
   assert.ok(headers["ETag"], "the badge 200 declares an ETag");
   assert.deepEqual(headers["Access-Control-Expose-Headers"]?.schema, { type: "string", const: "ETag, X-Handle-Status, X-Badge-State" });
   assert.match(headers["Cache-Control"]?.description ?? "", /max-age=60.*max-age=3600/i);
+  const unchangedHeaders = notModified.headers ?? {};
+  assert.ok(unchangedHeaders["ETag"], "the badge 304 declares its validator");
+  assert.deepEqual(unchangedHeaders["X-Badge-State"]?.schema, headers["X-Badge-State"]?.schema);
+  assert.deepEqual(unchangedHeaders["X-Handle-Status"]?.schema, headers["X-Handle-Status"]?.schema);
+  assert.deepEqual(unchangedHeaders["Access-Control-Expose-Headers"]?.schema, headers["Access-Control-Expose-Headers"]?.schema);
+  assert.match(unchangedHeaders["Cache-Control"]?.description ?? "", /max-age=60.*max-age=3600/i);
   assert.deepEqual(badge.responses["404"].content["application/json"]?.schema, { $ref: "#/components/schemas/Error" });
   assert.match(badge.responses["404"].description, /handle.*grammar/i);
   // summary is the surface text truncated to OPENAPI_SUMMARY_CAP at a word

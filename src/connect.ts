@@ -1013,19 +1013,20 @@ export const DAILY_CAP_ROUTES: ReadonlySet<string> = new Set([
 // the 200 made a generated client type the 304 body `never`: the no-change
 // outcome the document's own summary tells it to request was the one it could
 // not read off the wire. test/openapi-304-conditional.test.ts pins the
-// membership and the router's live 304 (empty body, no-store) against this set.
+// membership and the router's live 304 (empty body and response headers) against this set.
 // /openapi.json joins the three /api reads: it is content-addressed (the
 // x-document-sha256 it already computes names the document independent of the
 // request clock), so its ETag is that hash and an If-None-Match that still
 // matches answers 304 — the largest uncacheable document on the surface
 // becoming revalidable without re-sending ~750 KB (no-scheduler, post 8731).
-// Every other conditional short-circuit (none exist) and the POST redirects
-// (303) stay out of this set, as they are.
+// The badge's route-local conditional branch is included here as its OpenAPI
+// projection; POST redirects (303) remain out of this set.
 export const CONDITIONAL_304_ROUTES: ReadonlySet<string> = new Set([
   "/api/changes",
   "/api/citizen/:handle",
   "/api/comment/:id",
   "/api/pulse",
+  "/badge/:handle.svg",
   "/openapi.json",
 ]);
 
@@ -1040,6 +1041,28 @@ const CONDITIONAL_IF_NONE_MATCH_PARAMETER = {
 const CONDITIONAL_ETAG_RESPONSE_HEADER = {
   description: "Entity tag for this representation. Send it as If-None-Match on a later read; a live match returns 304 with no body.",
   schema: { type: "string" },
+};
+
+// A badge 304 repeats the state and cache metadata from its 200: a client
+// validating a cached SVG still receives the key state and the lifetime that
+// governs the stored copy.
+const BADGE_CONDITIONAL_304_RESPONSE_HEADERS = {
+  "X-Handle-Status": {
+    description: "Registry existence only: `known` means this grammar-valid handle names a citizen and does not report key state; `unknown` means no citizen is registered.",
+    schema: { type: "string", enum: ["known", "unknown"] },
+  },
+  "X-Badge-State": {
+    description: "The badge's key state, the finer partition that sets Cache-Control: `bound` caches 1h, `revoked`/`none`/`unknown` cache 60s.",
+    schema: { type: "string", enum: ["bound", "revoked", "none", "unknown"] },
+  },
+  "Cache-Control": {
+    description: "Unknown, keyless, or revoked badges use public, max-age=60; a bound-key badge uses public, max-age=3600. X-Badge-State names which.",
+    schema: { type: "string" },
+  },
+  "Access-Control-Expose-Headers": {
+    description: "Exposes ETag, X-Handle-Status and X-Badge-State to browser clients making cross-origin requests.",
+    schema: { type: "string", const: "ETag, X-Handle-Status, X-Badge-State" },
+  },
 };
 
 // The refused-write 400, declared on every write that can answer it, not on one
@@ -2860,14 +2883,17 @@ export function openApi(origin: string, now = Date.now()) {
       // The conditional GET's 304, declared per route. A 304 carries no body by
       // RFC 9110 (the client keeps the stored representation), so the response
       // declares no content -- it is the empty success, distinct from the 200
-      // that carries the JSON page.
+      // that carries the representation.
       const conditional304 =
         v === "GET" && CONDITIONAL_304_ROUTES.has(r.path)
           ? {
               "304": {
                 description:
-                  "If-None-Match carried the ETag this endpoint serves and the representation has not moved. No body: the client keeps the page it already holds.",
-                headers: { ETag: CONDITIONAL_ETAG_RESPONSE_HEADER },
+                  "If-None-Match carried the ETag this endpoint serves and the representation has not moved. No body: the client keeps the representation it already holds.",
+                headers: {
+                  ETag: CONDITIONAL_ETAG_RESPONSE_HEADER,
+                  ...(r.path === "/badge/:handle.svg" ? BADGE_CONDITIONAL_304_RESPONSE_HEADERS : {}),
+                },
               },
             }
           : {};

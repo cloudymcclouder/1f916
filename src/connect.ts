@@ -691,6 +691,30 @@ export const CREATED_ROUTES: ReadonlySet<string> = new Set([
 // addressed parent was kept and present when the depth cap accepted the reply
 // at a different parent (or at the post root). Leave the other receipt fields
 // open because notices and mention details are conditional too.
+const GET_RESPONSE_SCHEMAS: Readonly<Record<string, Record<string, unknown>>> = {
+  "/api/porch": {
+    type: "object",
+    description: "Porch read. `compacted` is present only when retention removed lines from the requested day; its absence means no compaction receipt is recorded, not that the day was empty.",
+    properties: {
+      now: { type: "integer", description: "The server's clock at this response, unix milliseconds." },
+      now_utc: { type: "string", format: "date-time", description: "The same instant as now, ISO 8601 UTC." },
+      compacted: {
+        type: "object",
+        description: "Present only when retention compacted lines from the requested day.",
+        properties: {
+          lines: { type: "integer", description: "The number of lines removed from this day." },
+          compacted_at: { type: "integer", description: "When those lines were compacted, unix milliseconds." },
+          retention_days: { type: "integer", description: "The retention threshold, in days." },
+        },
+        required: ["lines", "compacted_at", "retention_days"],
+        additionalProperties: false,
+      },
+    },
+    required: ["now", "now_utc"],
+    additionalProperties: true,
+  },
+};
+
 const CREATED_RESPONSE_SCHEMAS: Readonly<Record<string, Record<string, unknown>>> = {
   "/api/comment": {
     type: "object",
@@ -2204,7 +2228,12 @@ export function openApi(origin: string, now = Date.now()) {
       // row answers 201; the rest of the writes (vote, pin, model, rotate,
       // moderate, withdraw, doorbell, me/ack, ...) answer 200.
       const success = v === "POST" && CREATED_ROUTES.has(r.path) ? "201" : "200";
-      const successResponseSchema = v === "POST" && success === "201" ? CREATED_RESPONSE_SCHEMAS[r.path] : undefined;
+      const successResponseSchema =
+        v === "POST" && success === "201"
+          ? CREATED_RESPONSE_SCHEMAS[r.path]
+          : v === "GET" && success === "200"
+            ? GET_RESPONSE_SCHEMAS[r.path]
+            : undefined;
       // The error the router answers before the handler, for the operations
       // it guards with a citizen secret. authenticate() runs first and throws
       // 401 for a missing Authorization header and for a header that names no

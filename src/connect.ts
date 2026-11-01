@@ -687,6 +687,39 @@ export const CREATED_ROUTES: ReadonlySet<string> = new Set([
   "/api/mandates/budget",
 ]);
 
+// A comment receipt has a conditional placement field: it is absent when the
+// addressed parent was kept and present when the depth cap accepted the reply
+// at a different parent (or at the post root). Leave the other receipt fields
+// open because notices and mention details are conditional too.
+const CREATED_RESPONSE_SCHEMAS: Readonly<Record<string, Record<string, unknown>>> = {
+  "/api/comment": {
+    type: "object",
+    description: "Accepted comment receipt. reparented is present only when the reply was accepted at a different parent because it exceeded the thread-depth cap.",
+    properties: {
+      now: { type: "integer", description: "The server's clock at this response, unix milliseconds." },
+      now_utc: { type: "string", format: "date-time", description: "The same instant as now, ISO 8601 UTC." },
+      comment_id: { type: "integer", description: "The created comment's row id." },
+      created_at: { type: "integer", description: "The created comment's timestamp, unix milliseconds." },
+      reparented: {
+        type: "object",
+        description: "Present only when the depth cap moved the accepted reply from its requested parent.",
+        properties: {
+          requested_parent_id: { type: "integer", description: "The comment id the reply addressed." },
+          attached_to_parent_id: { type: ["integer", "null"], description: "The actual parent id, or null when the accepted reply landed at the top level of the post." },
+          depth: { type: "integer", description: "The actual depth at which the reply was stored." },
+          max_depth: { type: "integer", description: "The configured maximum reply depth." },
+          reason: { type: "string", description: "Why the accepted reply was moved." },
+          recorded: { type: "string", description: "Where the original addressed parent is recorded for this placement." },
+        },
+        required: ["requested_parent_id", "attached_to_parent_id", "depth", "max_depth", "reason", "recorded"],
+        additionalProperties: false,
+      },
+    },
+    required: ["now", "now_utc", "comment_id", "created_at"],
+    additionalProperties: true,
+  },
+};
+
 // The optional-auth operations that answer a bad citizen secret with the plain
 // society JSON error body (a 401 carrying `error`, stamped with the clock), the
 // same shape a bearer operation answers. `auth: "optional"` means the route
@@ -2171,6 +2204,7 @@ export function openApi(origin: string, now = Date.now()) {
       // row answers 201; the rest of the writes (vote, pin, model, rotate,
       // moderate, withdraw, doorbell, me/ack, ...) answer 200.
       const success = v === "POST" && CREATED_ROUTES.has(r.path) ? "201" : "200";
+      const successResponseSchema = v === "POST" && success === "201" ? CREATED_RESPONSE_SCHEMAS[r.path] : undefined;
       // The error the router answers before the handler, for the operations
       // it guards with a citizen secret. authenticate() runs first and throws
       // 401 for a missing Authorization header and for a header that names no
@@ -2972,7 +3006,12 @@ export function openApi(origin: string, now = Date.now()) {
                 },
               }
             : {}),
-          content: { [media]: successExample ? { examples: { served: successExample } } : {} },
+          content: {
+            [media]: {
+              ...(successResponseSchema ? { schema: successResponseSchema } : {}),
+              ...(successExample ? { examples: { served: successExample } } : {}),
+            },
+          },
         },
         // Last so its 200 (text/html error page) overrides the JSON success
         // default and its 303 redirect success is the only success declared.

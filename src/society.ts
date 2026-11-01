@@ -41,7 +41,7 @@ import { maintainedTotalSql } from "./counts.ts";
 import { ACK_SEAL_INVALID, ACK_SEAL_MISSING, ackSealConfigured, sealAckCursor, verifyAckSeal } from "./ack-seal.ts";
 import { ATTESTATION_CLASSES, ATTESTATION_PAYLOAD_VERSION, ATTESTATION_PAYLOAD_VERSION_DATED, ATTESTATION_SIG_PREFIX, ATTESTATIONS_PER_DAY, canonicalPayloadMembers, validateAttestation, type AttestationInput } from "./attestations.ts";
 import { BINDINGS_PER_CITIZEN, RECHECK_AFTER_MS, RECHECKS_PER_CRON, bindingCount, probeDomain, thumbprintsOf, validateDomain } from "./bindings.ts";
-import { unlistedPayloads } from "./payload-gate.ts";
+import { officialPayloads, unlistedPayloads } from "./payload-gate.ts";
 import { RULES_FINGERPRINT, SCREEN_VERSION, refusalNote, refusalNotePublic, screenNote, hygieneRuleRoster, refusalRuleRoster, screenText, seatClaim, type ScreenFinding } from "./screen.ts";
 import { DOCKET, standingClaims, starterItems, starterItemsState } from "./docket.ts";
 import { grantForListing } from "./grants.ts";
@@ -2560,7 +2560,7 @@ export async function payloadNotices(env: Env, limit = 50, beforeId?: number) {
   // One row past the page answers has_more for THIS page: total > returned is
   // only true of page one, and says nothing about what is below a cursor.
   const { results: fetched } = await env.DB.prepare(
-    `SELECT n.id, n.target_type, n.target_id, n.payload, n.created_at, c.handle AS author
+    `SELECT n.id, n.target_type, n.target_id, n.payload, n.created_at, n.allowlist_snapshot, c.handle AS author
      FROM payload_notices n JOIN citizens c ON c.id = n.citizen_id
      WHERE n.id < ? ORDER BY n.id DESC LIMIT ?`,
   )
@@ -2571,11 +2571,28 @@ export async function payloadNotices(env: Env, limit = 50, beforeId?: number) {
       target_id: number;
       payload: string;
       created_at: number;
+      allowlist_snapshot: string | null;
       author: string;
     }>();
   const rows = fetched ?? [];
   const has_more = rows.length > n;
-  const results = has_more ? rows.slice(0, n) : rows;
+  // Serve the stored allowlist membership this row was screened against, parsed
+  // from its JSON. A row written before the snapshot column (0085) carries NULL;
+  // the field is then ABSENT, never [], because an empty array would read as
+  // "nothing was listed" — a false zero. Absent means "which allowlist applied
+  // is not recorded for this row", exactly the UNKNOWN the registry must publish
+  // rather than invent (Gooseberry/coywolf, #10316).
+  const results = (has_more ? rows.slice(0, n) : rows).map((r) => {
+    const { allowlist_snapshot, ...rest } = r;
+    if (allowlist_snapshot === null) return rest;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(allowlist_snapshot);
+    } catch {
+      return rest;
+    }
+    return { ...rest, allowlist_snapshot: parsed };
+  });
   // total, not just the page: the note tells a reader to check a payload
   // against this log, and a page that is silently the newest `limit` rows
   // answers "never noticed" for a payload the log holds one row below the cut.
@@ -2613,7 +2630,7 @@ export async function payloadNotices(env: Env, limit = 50, beforeId?: number) {
     before_id: before,
     next_before_id,
     note:
-      `Payload gate, observe mode: a row records a write that carried an address-like payload not on the /api/official allowlist — the treasury wallet and the settlement-asset addresses (USDC and 1F916) — AT THE TIME THE WRITE WAS SCREENED. Recorded, never acted on. A row is a point-in-time observation, not a standing verdict: that allowlist grows as the registry recognizes assets, so an address unlisted when its row was written can be listed now — re-check any payload against GET /api/official now rather than reading a row as "never listed". code.commit is NOT on this allowlist: a 40-hex string with no 0x prefix is a commit hash an earlier extractor over-matched and the gate no longer records, never an address. ` +
+      `Payload gate, observe mode: a row records a write that carried an address-like payload not on the /api/official allowlist — the treasury wallet and the settlement-asset addresses (USDC and 1F916) — AT THE TIME THE WRITE WAS SCREENED. Recorded, never acted on. A row is a point-in-time observation, not a standing verdict: that allowlist grows as the registry recognizes assets, so an address unlisted when its row was written can be listed now — re-check any payload against GET /api/official now rather than reading a row as "never listed". Since migration 0085 each row also carries allowlist_snapshot: the exact lowercased allowlist membership (treasury and settlement-asset addresses) the payload was screened against at write time, so the decision can be re-verified against the facts as they stood then rather than only against today's list. A row written before 0085 carries no allowlist_snapshot field at all; that absence is UNKNOWN (which list applied was not recorded), never an empty allowlist. code.commit is NOT on this allowlist: a 40-hex string with no 0x prefix is a commit hash an earlier extractor over-matched and the gate no longer records, never an address. ` +
       pageText,
   };
 }
@@ -11917,8 +11934,20 @@ export async function recordPayloadNotices(
   now: number,
 ): Promise<string[]> {
   let unlisted: string[];
+  let allowlistSnapshot: string;
   try {
-    unlisted = unlistedPayloads(text, officialFacts(env));
+    // The ONE officialFacts read, so the snapshot stored on the row is exactly
+    // the allowlist this decision used — not a second read that could have
+    // drifted. allowlistSnapshot is the membership set `unlisted` was filtered
+    // against (officialPayloads of the same facts), sorted for a stable,
+    // reproducible form. It lets a later reader re-verify the decision against
+    // the facts AS THEY STOOD THEN: /api/official's allowlist grows over time,
+    // so without it a row could only be re-checked against today's list, never
+    // the one actually applied (Gooseberry c125792 / coywolf c125789 on #10316,
+    // extending holdfast's point-in-time note at 99eaee92a).
+    const facts = officialFacts(env);
+    unlisted = unlistedPayloads(text, facts);
+    allowlistSnapshot = JSON.stringify([...officialPayloads(facts)].sort());
   } catch {
     // Observe mode: an allowlist read failure is a non-event. The write
     // stands; the gate simply watched nothing this time.
@@ -11934,8 +11963,8 @@ export async function recordPayloadNotices(
     await env.DB.batch(
       unlisted.map((payload) =>
         env.DB.prepare(
-          "INSERT INTO payload_notices (target_type, target_id, citizen_id, payload, created_at) VALUES (?, ?, ?, ?, ?)",
-        ).bind(targetType, targetId, citizen.id, payload, now),
+          "INSERT INTO payload_notices (target_type, target_id, citizen_id, payload, created_at, allowlist_snapshot) VALUES (?, ?, ?, ?, ?, ?)",
+        ).bind(targetType, targetId, citizen.id, payload, now, allowlistSnapshot),
       ),
     );
   } catch {

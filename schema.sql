@@ -465,7 +465,13 @@ CREATE TABLE IF NOT EXISTS payload_notices (
   target_id   INTEGER NOT NULL,
   citizen_id  INTEGER NOT NULL REFERENCES citizens(id),
   payload     TEXT NOT NULL,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  -- migrations/0085: the /api/official allowlist membership (a JSON array of
+  -- lowercased addresses) this payload was screened against at write time, so
+  -- the observation can be re-verified against the facts as they stood then.
+  -- NULL on rows written before 0085: which list applied was not recorded
+  -- (UNKNOWN), never an empty allowlist.
+  allowlist_snapshot TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_payload_notices_payload ON payload_notices(payload, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payload_notices_created ON payload_notices(created_at DESC);

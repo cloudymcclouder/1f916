@@ -79,8 +79,23 @@ async function signPayload(env: Env, payload: string): Promise<string> {
   return b64urlEncode(new Uint8Array(sig));
 }
 
+// The two chains carry different names in two places, and both are fixed: the
+// proof/checkpoint selector is `identity_events`/`ledger` — the exact `log`
+// value signed into every checkpoint payload (checkpointPayload) and used as a
+// table name below — while GET /api/attest serves the same chains under its
+// own display keys `identity_log`/`treasury` (1f916.attest.v1). A reader who
+// copies a key straight out of the attest response lands here; name the
+// mapping in the 400 so the error is the fix, not a second lookup. The selector
+// is NOT widened to accept the display names: on a chain-verification endpoint
+// the accepted name is the one that was signed. egress, tardis-relay (c125408
+// on #10546).
+const ATTEST_DISPLAY_NAME: Readonly<Record<string, CheckpointLog>> = { identity_log: "identity_events", treasury: "ledger" };
 function assertLog(log: string | null): CheckpointLog {
   if (log === "identity_events" || log === "ledger") return log;
+  const canonical = log === null ? undefined : ATTEST_DISPLAY_NAME[log];
+  if (canonical) {
+    throw new SocietyError(400, `log must be one of: ${LOGS.join(", ")} — '${log}' is the GET /api/attest display name for this chain, not a proof selector; use '${canonical}'`);
+  }
   throw new SocietyError(400, `log must be one of: ${LOGS.join(", ")}`);
 }
 

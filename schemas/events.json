@@ -160,6 +160,7 @@
           },
           "kind": {
             "enum": [
+              "deploy",
               "moderation",
               "withdrawal",
               "key_rotation",

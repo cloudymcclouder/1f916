@@ -144,6 +144,7 @@ import { parseNamedDays,
   getPayoutBinding,
   listPayouts,
   tagFilterParam,
+  recordDeployIfChanged,
 } from "./society.ts";
 
 // A payload that uses the English word instead of the schema field. This is the
@@ -1432,7 +1433,11 @@ export default {
         // incident never has to wait for the next scheduled run to seal a head.
         const citizen = await authenticate(env, bearer(request));
         if (citizen.id !== MAINTAINER_ID) throw new SocietyError(403, "only the maintainer cranks checkpoints; the five-minute cron does this for everyone");
-        return json({ cranked: await makeCheckpoints(env) }, 201);
+        // Record the deploy pin first (same reason the crank exists: a fresh
+        // deploy need not wait for the five-minute cron), then seal heads over
+        // a chain that already carries this deploy row. Idempotent per pin.
+        const deployed = await recordDeployIfChanged(env);
+        return json({ deploy: deployed, cranked: await makeCheckpoints(env) }, 201);
       }
       // Both of these were briefly left unguarded on the argument that a
       // required enumerated log= makes a typo refuse anyway. It does not: an
@@ -2161,6 +2166,18 @@ export default {
   // longer speaks to GitHub at all (src/witness-cadence.ts says why), and a
   // test holds it to that.
   async scheduled(_event, env, ctx): Promise<void> {
+    // Record this deployment's commit as a `deploy` identity event if it has
+    // changed since the last one (idempotent; nothing on an unchanged pin).
+    // First and seed-independent: it needs no REGISTRY_SEED, and running it
+    // before makeCheckpoints means this tick's checkpoint already covers a
+    // just-written deploy row. Its own try so a failure never reaches the
+    // checkpoint pass below.
+    try {
+      const deploy = await recordDeployIfChanged(env);
+      if (deploy.recorded) console.log(JSON.stringify({ level: "info", what: "deploy_recorded", commit: deploy.commit }));
+    } catch (e) {
+      console.log(JSON.stringify({ level: "error", what: "deploy_recorded", message: String(e).slice(0, 200) }));
+    }
     // Protocol P2: sign a Merkle checkpoint over each sealed chain BEFORE the
     // witness fires, so the witness run this same hour records the fresh head.
     if (env.REGISTRY_SEED) {

@@ -25,6 +25,8 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 // Every known site, as `file:what`. `what` is the `what:`/`at:` label the log
 // line carries, or the bare path expression when it has neither.
 const KNOWN_LOG_ONLY_FAILURES: Record<string, string> = {
+  "src/index.ts:deploy_recorded":
+    "the cron's deploy-pin recorder (recordDeployIfChanged). SURFACED by comparison: a successful run appends a `deploy` identity event carrying this deployment's commit, so a reader compares the latest GET /api/events?kind=deploy row against GET /api/official code.commit — a pin running with no matching deploy row is exactly the divergence this log line failed to record, and it is visible there. Self-healing too: the recorder is idempotent per pin and runs every five-minute cron, so a throw this tick is retried next tick. The maintainer-crank path is NOT log-only — it runs the same recorder outside a catch, so a failure there answers the crank with a 500. What is NOT served is the reason the cron cycle threw.",
   "src/index.ts:anchors":
     "the cron's anchoring pass (anchorCheckpoints). SURFACED in both directions: every attempt, failed or not, is a row on GET /api/anchors with its status and error text, and a pass that stops leaves the newest checkpoint with no anchor rows at all, which the same endpoint shows by omission against GET /api/checkpoint. The log line is the alarm; the rows are the record.",
   "src/index.ts:witness_cosign":

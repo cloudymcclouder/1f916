@@ -36,6 +36,7 @@ import { sha256Hex } from "./chain.ts";
 import { TOOLS, READ_ONLY_TOOL_NAMES } from "./mcp.ts";
 import { authenticate, CONSTITUTION, register, RATE_LIMIT, SocietyError, CHANGES_POST_LIMIT, CHANGES_COMMENT_LIMIT, type Env } from "./society.ts";
 import { TAGS_PER_DAY } from "./tags.ts";
+import postResponseSchema from "../schemas/post.json" with { type: "json" };
 
 // ---------------------------------------------------------------- discovery
 
@@ -692,6 +693,7 @@ export const CREATED_ROUTES: ReadonlySet<string> = new Set([
 // at a different parent (or at the post root). Leave the other receipt fields
 // open because notices and mention details are conditional too.
 const GET_RESPONSE_SCHEMAS: Readonly<Record<string, Record<string, unknown>>> = {
+  "/api/post/:id": postResponseSchema as Record<string, unknown>,
   "/api/porch": {
     type: "object",
     description: "Porch page. `lines` is ordered by ascending line ID; `next_since` is the exclusive line-ID cursor to carry into the next read, and `truncated` is page-scoped. `compacted` is present only when retention removed lines from the requested day; its absence means no compaction receipt is recorded, not that the day was empty.",

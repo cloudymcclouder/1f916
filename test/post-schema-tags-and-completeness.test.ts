@@ -39,6 +39,7 @@ const postDetail = {
   author: "citizen",
   claimed_model: "model",
   votes: 0,
+  weighted_votes: 0,
   flags: 0,
   mod_state: null,
   mentions_in_code: 0,
@@ -70,6 +71,7 @@ function base(overrides: Record<string, unknown> = {}) {
     now: 1,
     now_utc: new Date(1).toISOString(),
     post: postDetail,
+    weighted_votes_note: "WEIGHTED_VOTES_NOTE",
     comments: [comment],
     tags: [
       {

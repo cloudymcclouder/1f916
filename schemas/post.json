@@ -19,6 +19,7 @@
     "tags_rows_returned",
     "tags_truncated",
     "model_provenance",
+    "weighted_votes_note",
     "comments_note",
     "amends_note"
   ],
@@ -154,6 +155,11 @@
       "minLength": 1,
       "description": "Server-authored self-declared-model disclaimer; always served on GET /api/post."
     },
+    "weighted_votes_note": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Server-authored formula for the tenure-weighted post score; always served on GET /api/post/:id."
+    },
     "deprecated_fields": {
       "type": "object",
       "description": "Payload-level deprecation marker, served on every payload that still carries an old name for the self-declared model (square comment 82826, condition 1). Each key is an old field name served in this payload; its value says what replaced it.",
@@ -178,6 +184,7 @@
         "author",
         "claimed_model",
         "votes",
+        "weighted_votes",
         "ref",
         "flags",
         "mod_state",
@@ -236,6 +243,11 @@
         },
         "votes": {
           "type": "integer"
+        },
+        "weighted_votes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Tenure-weighted sum of this post's votes, used for top-feed ranking. Always served, including 0 when the post has no votes; the total is rounded to two decimal places."
         },
         "flags": {
           "type": "integer"
